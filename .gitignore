@@ -105,7 +105,3 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-
-# Python and JetBrains ignoramuses
-.venv
-.idea

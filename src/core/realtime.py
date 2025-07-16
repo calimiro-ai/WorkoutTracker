@@ -14,6 +14,7 @@ from collections import deque
 from typing import Optional, Dict, List, Tuple
 from queue import Queue
 import csv
+import datetime as dt
 
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -357,6 +358,9 @@ class WebcamRealtimeWithRepsPipeline:
                     break
                 elif key == ord('r'):
                     self._reset_all_counts()
+                # Test purpose to update frontend without counting a new rep
+                elif key == ord('t'):
+                    self._update_frontend_state()
                 
                 self.frame_count += 1
         
@@ -427,7 +431,7 @@ class WebcamRealtimeWithRepsPipeline:
         cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
 
         if self.paused:
-            cv2.putText(frame, "PAUSED", (10, 10, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2))
+            cv2.putText(frame, "PAUSED", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
         else:
             # Exercise information
@@ -589,7 +593,7 @@ class WebcamRealtimeWithRepsPipeline:
             
             plt.xlabel('Frame Number')
             plt.ylabel('Repetition Probability')
-            plt.title('Real-Time Exercise Repetition Detection Probabilities')
+            plt.title(f'Real-Time Exercise Repetition Detection Probabilities ({dt.datetime.now()})')
             plt.legend()
             plt.grid(True, alpha=0.3)
             plt.ylim(0, 1)
