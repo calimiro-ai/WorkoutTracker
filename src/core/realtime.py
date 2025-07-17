@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Real-time webcam exercise detection with live rep counting using peak detection
+Real-time webcam exercise detection with live rep counting using peak detection.
 """
 
 import cv2
