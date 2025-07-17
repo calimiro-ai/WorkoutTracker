@@ -281,7 +281,7 @@ class WebcamRealtimeWithRepsPipeline:
         # Start background processing thread
         processing_thread = threading.Thread(target=self._background_processor)
         processing_thread.start()
-        
+
         print("Starting real-time webcam exercise detection with rep counting...")
         print("Perform exercises in front of the camera!")
         
