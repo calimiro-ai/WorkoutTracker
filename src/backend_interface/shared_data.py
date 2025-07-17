@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Thread-safe dictionary-like data structure to help threads to communicate with each other
+Thread-safe dictionary-like data structure to help threads to communicate with each other.
 """
 
 from collections.abc import Hashable
