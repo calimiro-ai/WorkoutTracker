@@ -4,7 +4,7 @@
 Frontend Interface Module
 
 This module provides functions for interacting with the frontend interface.
-Currently contains placeholder functions that will be implemented by the frontend team.
+
 """
 
 import sys
