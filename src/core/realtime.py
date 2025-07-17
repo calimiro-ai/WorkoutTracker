@@ -300,6 +300,10 @@ class WebcamRealtimeWithRepsPipeline:
         
         try:
             while True:
+
+                if self.shared_data.get("stopped"):
+                    break
+
                 frame_start_time = time.time()
                 
                 # Capture frame
@@ -392,6 +396,7 @@ class WebcamRealtimeWithRepsPipeline:
     def _background_processor(self):
         """Background thread for model inference."""
         while self.running:
+
             try:
                 # Get features from queue
                 frame_idx, features = self.feature_queue.get(timeout=0.1)
