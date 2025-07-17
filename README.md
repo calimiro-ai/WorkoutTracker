@@ -7,9 +7,16 @@ A computer vision system for real-time exercise classification and repetition co
 ```
 SmartMirror/
 ├── 📁 src/                      # Source code
+│   ├── 📁 backend_interface/
+│   │   ├── backend_interface.py # Backend interface to communicate with the mirror
+│   │   ├── server.py            # HTTP server to receive data batches from the mirror
+│   │   └── shared_data.py       # Thread-Safe IPC
 │   ├── 📁 core/                 # Core functionality
-│   │   ├── realtime_pipeline.py # Main real-time pipeline
+│   │   ├── realtime_pipeline.py # Main realtime pipeline
 │   │   ├── dataset_builder.py   # Dataset creation and management
+│   │   ├── realtime.py          # Realtime model & OpenCV rendering
+│   │   ├── realtime_no_counting.py
+│   │   ├── main.py              # Main script
 │   │   └── __init__.py
 │   ├── 📁 training/             # Model training
 │   │   ├── train_classifier.py  # Classification model training
@@ -17,7 +24,7 @@ SmartMirror/
 │   │   ├── classification/      # Classification modules
 │   │   └── segmentation/        # Segmentation modules
 │   ├── 📁 testing/              # Testing and debugging
-│   │   ├── test_*.py           # Various test scripts
+│   │   ├── test_*.py            # Various test scripts
 │   │   ├── debug_classification.py
 │   │   └── inspect_classification_dataset.py
 │   ├── 📁 utils/                # Utility scripts
