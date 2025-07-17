@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Frontend Interface Module
 
@@ -10,9 +11,10 @@ import sys
 from typing import Dict
 import json
 import requests as rq
+from .server import *
 
 
-# By default in the frontend the port for server running is defined as 8080
+# By default in the frontend the port for backend_interface running is defined as 8080
 # Check https://github.com/ixodev/magicmirror/blob/master/config/config.js
 PORT = 8080
 # Has also to be synced with the frontend
@@ -35,8 +37,8 @@ def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> N
                          Example: 'push-ups', 'squats', 'pull-ups', 'dips', 'unknown'
     
     Returns:
-        two booleans: the first one indicates if the user paused the workout session,
-        the second indicates if the user stopped the workout session
+        None
+
     """
     print(f"Attempt to send data to the mirror, update_workout_state()...")
 
@@ -55,21 +57,7 @@ def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> N
     if rep.status_code != OK:
         print(f"Error: could not POST to localhost:{PORT}", file=sys.stderr)
 
-    try:
-        print(f"Response:\n{rep.text}")
-        print("Receiving & serializing response...")
-        result = json.loads(rep.text)
-    except Exception as ex:
-        print(f"Error: could not deserialize JSON, reason: {ex}", file=sys.stderr)
-        # Default values for paused & stopped are both False
-        return False, False
+    print(f"Response from \"{ADDRESS_SERVER}:{PORT_SERVER}\" = {rep.text}")
 
-    paused = result.get("paused") # is the workout session paused?
-    stopped = result.get("stopped") # is the workout session stopped?
-
-    if paused is None or stopped is None:
-        return False, False
-
-    return paused, stopped
 
 

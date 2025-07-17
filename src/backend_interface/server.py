@@ -1,5 +1,7 @@
+#!/usr/bin/env python3
+
 """
-Simple server to communicate with the frontend
+Simple backend interface to communicate with the frontend
 """
 
 import sys
@@ -13,7 +15,7 @@ ADDRESS_SERVER = "0.0.0.0"
 # Port of the server
 PORT_SERVER = 8000
 
-# By default in the frontend the port for server running is defined as 8080
+# By default in the frontend the port for backend_interface running is defined as 8080
 # Check https://github.com/ixodev/magicmirror/blob/master/config/config.js
 PORT_FRONTEND = 8080
 
@@ -89,10 +91,20 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         print(data)
 
 
+def backend_process():
+    try:
+        server = HTTPServer((ADDRESS_SERVER, PORT_SERVER), HTTPRequestHandler)
+        print(f"Server started on {ADDRESS_SERVER}:{PORT_SERVER}")
+        server.serve_forever()
+    except Exception as ex:
+        print(f"Error: {ex}", file=sys.stderr)
+
+
 
 # Test case
 if __name__ == "__main__":
-    server = HTTPServer((ADDRESS_SERVER, PORT_SERVER), HTTPRequestHandler)
-    print(f"Server started on {ADDRESS_SERVER}:{PORT_SERVER}")
-    server.serve_forever()
-
+    try:
+        backend_process()
+    except KeyboardInterrupt: # Stop by pressing Ctrl+C
+        print("Bye!")
+        exit(0)

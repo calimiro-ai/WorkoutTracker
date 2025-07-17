@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 """
 Real-time webcam exercise detection with live rep counting using peak detection
 """
@@ -16,12 +17,14 @@ from queue import Queue
 import csv
 import datetime as dt
 
+
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from core.dataset_builder import FeatureExtractor
 from core.realtime_pipeline import ExerciseClassifier
-from core.frontend_interface import update_workout_state
+from backend_interface.backend_interface import update_workout_state
+from backend_interface.server import backend_process
 
 
 class RealTimePeakDetector:
@@ -79,7 +82,7 @@ class RealTimePeakDetector:
         peak_detected = False
         
         if probability > self.last_probability:
-            # Rising - update peak candidate to highest point
+            # Rising - update peak candidate to the highest point
             if not self.rising:
                 self.rising = True
             self.peak_candidate = (frame_idx, probability)
@@ -255,7 +258,7 @@ class WebcamRealtimeWithRepsPipeline:
         self.probability_scores = []
         
         print(f"Webcam real-time pipeline with rep counting initialized")
-        print(f"Press 'q' to quit, 'r' to reset counts")
+        print(f"Press 'q' to quit, 'r' to reset counts, 't' to send data batch")
     
     def run(self):
         """Run the real-time webcam pipeline with rep counting."""
@@ -281,6 +284,10 @@ class WebcamRealtimeWithRepsPipeline:
         # Start background processing thread
         processing_thread = threading.Thread(target=self._background_processor)
         processing_thread.start()
+
+        # Start backend interface thread
+        backend_thread = threading.Thread(target=backend_process, daemon=True)
+        backend_thread.start()
 
         print("Starting real-time webcam exercise detection with rep counting...")
         print("Perform exercises in front of the camera!")
@@ -367,6 +374,7 @@ class WebcamRealtimeWithRepsPipeline:
         finally:
             # Stop background processing
             self.running = False
+
             processing_thread.join()
             
             cap.release()
@@ -510,14 +518,8 @@ class WebcamRealtimeWithRepsPipeline:
             for exercise, counter in self.rep_counters.items()
         }
 
-
         # Call frontend update function
-        paused, stopped = update_workout_state(total_reps, self.current_exercise)
-
-        self.paused = paused # Implement paused logic
-        # self.running = not stopped
-
-
+        update_workout_state(total_reps, self.current_exercise)
 
     
     def _print_results(self):
@@ -640,4 +642,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main() 
+    main()
+
