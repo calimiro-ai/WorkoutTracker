@@ -7,7 +7,9 @@ Simple backend interface to communicate with the frontend
 import sys
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Tuple
 
+from backend_interface.shared_data import SharedData
 
 # Address
 ADDRESS_SERVER = "0.0.0.0"
@@ -57,11 +59,13 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         post_body = self.rfile.read(content_length).decode("utf-8")
 
         try:
-
             # Try to deserialize json payload
             data = json.loads(post_body)
 
-        except json.JSONDecodeError as ex:
+            for key in data:
+                self.server.shared_data.update(key, data[key])
+
+        except Exception as ex:
 
             # Error (JSON could not be deserialized)
             response = "Invalid JSON".encode("utf-8")
@@ -87,13 +91,40 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response)
 
-        # Doing some stuff with the body of the request
-        print(data)
+
+class Server(HTTPServer):
+
+    """
+    HTTP Server
+    Custom class for an HTTP Server to pass a thread-safe SharedData object to the HTTPRequestHandler
+    """
+
+    def __init__(self, server_address: Tuple[str, int], RequestHandlerClass, shared_data: SharedData):
+
+        """
+        Constructor
+        Args:
+            server_address: a tuple which contains the IP address of the server (as a string) and the port (as an int)
+            RequestHandlerClass: any class which extends the BaseHTTPRequestHandler class
+            shared_data: a SharedData object
+        """
+
+        super().__init__(server_address, RequestHandlerClass)
+        self.shared_data = shared_data
 
 
-def backend_process():
+
+def backend_process(shared_data: SharedData):
+    """
+    Target function for the server thread.
+    Args:
+        shared_data: a dictionary which contains all the data that will be shared between this thread and the main thread.
+    Returns:
+        None
+    """
+
     try:
-        server = HTTPServer((ADDRESS_SERVER, PORT_SERVER), HTTPRequestHandler)
+        server = Server((ADDRESS_SERVER, PORT_SERVER), HTTPRequestHandler, shared_data)
         print(f"Server started on {ADDRESS_SERVER}:{PORT_SERVER}")
         server.serve_forever()
     except Exception as ex:
@@ -104,7 +135,8 @@ def backend_process():
 # Test case
 if __name__ == "__main__":
     try:
-        backend_process()
+        # No shared_data required, this is just a test case
+        backend_process(SharedData())
     except KeyboardInterrupt: # Stop by pressing Ctrl+C
         print("Bye!")
         exit(0)

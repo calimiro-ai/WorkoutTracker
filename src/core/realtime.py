@@ -17,7 +17,6 @@ from queue import Queue
 import csv
 import datetime as dt
 
-
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -25,6 +24,7 @@ from core.dataset_builder import FeatureExtractor
 from core.realtime_pipeline import ExerciseClassifier
 from backend_interface.backend_interface import update_workout_state
 from backend_interface.server import backend_process
+from backend_interface.shared_data import SharedData
 
 
 class RealTimePeakDetector:
@@ -245,8 +245,12 @@ class WebcamRealtimeWithRepsPipeline:
         # Threading
         self.feature_queue = Queue(maxsize=100)  # Buffer for features
         self.result_queue = Queue(maxsize=10)    # Buffer for results
-        self.paused = False # Is the workout session paused?
         self.running = True
+
+        # Shared data with the server
+        self.shared_data = SharedData()
+        self.shared_data.update("paused", False)
+        self.shared_data.update("stopped", False)
         
         # Performance tracking
         self.processing_times = deque(maxlen=30)
@@ -286,7 +290,7 @@ class WebcamRealtimeWithRepsPipeline:
         processing_thread.start()
 
         # Start backend interface thread
-        backend_thread = threading.Thread(target=backend_process, daemon=True)
+        backend_thread = threading.Thread(target=backend_process, args=(self.shared_data,), daemon=True)
         backend_thread.start()
 
         print("Starting real-time webcam exercise detection with rep counting...")
@@ -438,7 +442,8 @@ class WebcamRealtimeWithRepsPipeline:
         cv2.rectangle(overlay, (0, 0), (width, 180), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
 
-        if self.paused:
+        # Has the user paused the session?
+        if self.shared_data.get("paused"):
             cv2.putText(frame, "PAUSED", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
         else:

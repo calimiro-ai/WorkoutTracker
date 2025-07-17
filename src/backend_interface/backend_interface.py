@@ -40,7 +40,6 @@ def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> N
         None
 
     """
-    print(f"Attempt to send data to the mirror, update_workout_state()...")
 
     # Create JSON structure for frontend
     workout_state = {
@@ -50,14 +49,11 @@ def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> N
         "timestamp": None  # Can be added if needed
     }
 
-    print(f"Making POST request to \"http://localhost:{PORT}/{ROUTE}\"...")
     # Make a POST request to the frontend with workout_state as JSON payload
     rep = rq.post(f"http://localhost:{PORT}/{ROUTE}", json=workout_state)
 
     if rep.status_code != OK:
         print(f"Error: could not POST to localhost:{PORT}", file=sys.stderr)
-
-    print(f"Response from \"{ADDRESS_SERVER}:{PORT_SERVER}\" = {rep.text}")
 
 
 
