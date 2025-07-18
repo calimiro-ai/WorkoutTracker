@@ -5,7 +5,7 @@ Thread-safe dictionary-like data structure to help threads to communicate with e
 """
 
 from collections.abc import Hashable
-from typing import Any
+from typing import Any, Optional
 import threading
 
 
@@ -34,6 +34,21 @@ class SharedData:
 
         with self.lock:
             self.data.update({k: v})
+
+    def pop(self, k: Hashable, dv: Optional[Any]):
+        """
+        Pops a value from the dict by its dedicated key and gives the V of the K-V pair which is associated with this key
+        If the key is not present, dv will be returned
+
+        Args:
+            k: a hashable object
+            dv: an optional
+        Returns:
+            the value associated with this key or dv if the key is not part of a K-V pair
+        """
+
+        with self.lock:
+            return self.data.pop(k, dv)
 
     def get(self, k: Hashable):
         """

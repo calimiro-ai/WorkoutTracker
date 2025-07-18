@@ -1,43 +1,24 @@
 #!/usr/bin/env python3
 
 """
-Backend interface to communicate with the frontend
+Server to listen for user events
 """
 
 import sys
 import os
+import threading
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Tuple
 
-from backend_interface.shared_data import SharedData
+
+from shared_data import SharedData
+from server_settings import *
+from src.core.realtime import run_pipeline
 
 
 
-# Address
-ADDRESS_SERVER = "0.0.0.0"
 
-# Port of the server
-PORT_SERVER = 8000
-
-# By default in the frontend the port for backend_interface running is defined as 8080
-# Check https://github.com/ixodev/magicmirror/blob/master/config/config.js
-PORT_FRONTEND = 8080
-
-# Has to be synced with the frontend
-# Check https://github.com/ixodev/magicmirror/blob/master/modules/MMM-WorkoutTracker/node_helper.js
-ROUTE = "/workout-tracking"
-GET_AVAILABLE_EXERCISES = "/available-exercises"
-MANUAL_EXERCISE = "/set-manual-exercise"
-
-# Store the different routes
-GET_REQUESTS = [GET_AVAILABLE_EXERCISES]
-POST_REQUESTS = [ROUTE, MANUAL_EXERCISE]
-
-# Status codes
-OK = 200
-INVALID = 400
-NOT_FOUND = 404
 
 
 class HTTPRequestHandler(BaseHTTPRequestHandler):
@@ -56,6 +37,8 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(response)
 
+    def check_shutdown(self):
+        ...
 
     def do_GET(self):
         """
@@ -79,6 +62,9 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(response)))
         self.end_headers()
         self.wfile.write(response.encode("utf-8"))
+
+        # Start the realtime pipeline
+        self.server.start_realtime_pipeline()
 
 
     def do_POST(self):
@@ -132,6 +118,8 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
 
 
 
+
+
 class Server(HTTPServer):
 
     """
@@ -139,44 +127,72 @@ class Server(HTTPServer):
     Custom class for an HTTP Server to pass a thread-safe SharedData object to the HTTPRequestHandler
     """
 
-    def __init__(self, server_address: Tuple[str, int], RequestHandlerClass, shared_data: SharedData):
+    def __init__(self, server_address: Tuple[str, int], RequestHandlerClass):
 
         """
         Constructor
         Args:
             server_address: a tuple which contains the IP address of the server (as a string) and the port (as an int)
             RequestHandlerClass: any class which extends the BaseHTTPRequestHandler class
-            shared_data: a SharedData object
         """
 
         super().__init__(server_address, RequestHandlerClass)
-        self.shared_data = shared_data
+
+        # Shared data with the other threads
+        self.shared_data = SharedData()
+
+        # Default K-V pairs
+        self.shared_data.update("paused", False)
+        self.shared_data.update("stopped", False)
+
+        # create realtime pipeline thread
+        self.realtime_pipeline_thread = None
+        self.reinit_realtime_pipeline_thread()
+
+    def reinit_realtime_pipeline_thread(self):
+        """
+        Function to re-create the realtime pipeline thread for each new start
+        """
+
+        self.realtime_pipeline_thread = threading.Thread(target=run_pipeline, args=(self.shared_data,), daemon=False)
+
+    def start_realtime_pipeline(self):
+        """
+        Function to start the realtime pipeline
+        """
+
+        # Check if the realtime pipeline is not already running
+        #if self.shared_data.get("realtime_pipeline_finished"):
+        # If this is not the first start of the pipeline, remove the realtime_pipeline_finished flag in shared_data
+        self.shared_data.pop("realtime_pipeline_finished", None)
+        self.shared_data.update("paused", False)
+        self.shared_data.update("stopped", False)
+        self.reinit_realtime_pipeline_thread()
+        self.realtime_pipeline_thread.start()
 
 
-
-def backend_process(shared_data: SharedData):
+def main():
     """
-    Target function for the server thread.
-    Args:
-        shared_data: a dictionary which contains all the data that will be shared between this thread and the main thread.
-    Returns:
-        None
+    Main function to start the server, which will start the realtime pipeline.
     """
 
-    try:
-        server = Server((ADDRESS_SERVER, PORT_SERVER), HTTPRequestHandler, shared_data)
-        print(f"Server started on {ADDRESS_SERVER}:{PORT_SERVER}")
-        server.serve_forever()
-    except Exception as ex:
-        print(f"Error: {ex}", file=sys.stderr)
+    #try:
+    server = Server((ADDRESS_SERVER, PORT_SERVER), HTTPRequestHandler)
+    print(f"Server started on {ADDRESS_SERVER}:{PORT_SERVER}")
+    server.serve_forever()
+
+    #except Exception as ex:
+     #   print(f"Error: {ex}", file=sys.stderr)
 
 
 
-# Test case
+# Real case!
 if __name__ == "__main__":
+
     try:
-        # No shared_data required, this is just a test case
-        backend_process(SharedData())
+        main()
     except KeyboardInterrupt: # Stop by pressing Ctrl+C
-        print("Bye!")
+        pass
+    finally:
+        print("\n\nBye!")
         exit(0)

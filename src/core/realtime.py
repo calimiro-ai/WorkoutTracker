@@ -18,13 +18,13 @@ import csv
 import datetime as dt
 
 # Add the src directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))  # Ajustez selon la structure du dossier
+
 
 from core.dataset_builder import FeatureExtractor
 from core.realtime_pipeline import ExerciseClassifier
-from backend_interface.backend_interface import update_workout_state
-from backend_interface.server import backend_process
-from backend_interface.shared_data import SharedData
+from src.backend_interface.backend_interface import update_workout_state
+from src.backend_interface.shared_data import SharedData
 
 
 class RealTimePeakDetector:
@@ -208,7 +208,9 @@ class WebcamRealtimeWithRepsPipeline:
                  classifier_model: str = "models/classification/exercise_classifier.keras",
                  segmentation_models_dir: str = "models/segmentation",
                  window_size: int = 30,
-                 webcam_id: int = 0):
+                 webcam_id: int = 0,
+                 shared_data: SharedData = None
+                 ):
         """
         Initialize the webcam real-time pipeline with rep counting.
         
@@ -223,6 +225,7 @@ class WebcamRealtimeWithRepsPipeline:
         self.feature_extractor = FeatureExtractor()
         self.window_size = window_size
         self.webcam_id = webcam_id
+        self.shared_data = shared_data
         
         # Rep counting
         self.peak_detector = RealTimePeakDetector()
@@ -246,11 +249,6 @@ class WebcamRealtimeWithRepsPipeline:
         self.feature_queue = Queue(maxsize=100)  # Buffer for features
         self.result_queue = Queue(maxsize=10)    # Buffer for results
         self.running = True
-
-        # Shared data with the server
-        self.shared_data = SharedData()
-        self.shared_data.update("paused", False)
-        self.shared_data.update("stopped", False)
         
         # Performance tracking
         self.processing_times = deque(maxlen=30)
@@ -288,10 +286,6 @@ class WebcamRealtimeWithRepsPipeline:
         # Start background processing thread
         processing_thread = threading.Thread(target=self._background_processor)
         processing_thread.start()
-
-        # Start backend interface thread
-        backend_thread = threading.Thread(target=backend_process, args=(self.shared_data,), daemon=True)
-        backend_thread.start()
 
         print("Starting real-time webcam exercise detection with rep counting...")
         print("Perform exercises in front of the camera!")
@@ -392,6 +386,8 @@ class WebcamRealtimeWithRepsPipeline:
         # Print final results and plot probabilities
         self._print_results()
         self._plot_probabilities()
+
+        self.shared_data.update("realtime_pipeline_finished", True)
     
     def _background_processor(self):
         """Background thread for model inference."""
@@ -623,8 +619,12 @@ class WebcamRealtimeWithRepsPipeline:
             print(f"Error plotting probabilities: {e}")
 
 
-def main():
-    """Main function for command-line usage."""
+def run_pipeline(shared_data: SharedData):
+
+    """
+    Run the whole realtime model + OpenCV capture & rendering pipeline
+    """
+
     import argparse
     
     parser = argparse.ArgumentParser(description='Real-time webcam exercise detection with rep counting')
@@ -645,10 +645,24 @@ def main():
         classifier_model=args.classifier,
         segmentation_models_dir=args.models_dir,
         window_size=args.window_size,
-        webcam_id=args.webcam_id
+        webcam_id=args.webcam_id,
+        shared_data=shared_data
     )
     
     pipeline.run()
+
+# Should only be used in test-case, without server support
+def main():
+
+    """
+    Main function
+    """
+
+    shared_data = SharedData()
+    shared_data.update("paused", False)
+    shared_data.update("stopped", False)
+
+    run_pipeline(shared_data)
 
 
 # Test case

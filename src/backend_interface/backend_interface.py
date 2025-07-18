@@ -11,7 +11,7 @@ import sys
 from typing import Dict
 import json
 import requests as rq
-from .server import *
+from server_settings import *
 
 
 # By default in the frontend the port for backend_interface running is defined as 8080
