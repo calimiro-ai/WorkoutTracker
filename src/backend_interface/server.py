@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 
 """
-Simple backend interface to communicate with the frontend
+Backend interface to communicate with the frontend
 """
 
 import sys
+import os
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Tuple
 
 from backend_interface.shared_data import SharedData
+
+
 
 # Address
 ADDRESS_SERVER = "0.0.0.0"
@@ -24,7 +27,12 @@ PORT_FRONTEND = 8080
 # Has to be synced with the frontend
 # Check https://github.com/ixodev/magicmirror/blob/master/modules/MMM-WorkoutTracker/node_helper.js
 ROUTE = "/workout-tracking"
+GET_AVAILABLE_EXERCISES = "/available-exercises"
+MANUAL_EXERCISE = "/set-manual-exercise"
 
+# Store the different routes
+GET_REQUESTS = [GET_AVAILABLE_EXERCISES]
+POST_REQUESTS = [ROUTE, MANUAL_EXERCISE]
 
 # Status codes
 OK = 200
@@ -37,18 +45,49 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
     Server to handle POST requests from the frontend.
     """
 
+    def send_404(self):
+        """
+        Method to send 404 as status code and an error message as a response for an invalid request
+        """
+        response = "Error: not found".encode("utf-8")
+        self.send_response(NOT_FOUND)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
+
+    def do_GET(self):
+        """
+        Override method to handle GET requests from the frontend interface
+        """
+        if not self.path in GET_REQUESTS:
+            self.send_404()
+            return
+
+        available_models = []
+
+        # Search in the models directory
+        for file in os.listdir("models/segmentation"):
+            if file.endswith(".keras"):
+                available_models.append(file.split(".")[0]) # Remove extension of the file
+
+        response = json.dumps({"available_exercises": available_models})
+
+        self.send_response(OK)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response.encode("utf-8"))
+
+
     def do_POST(self):
         """
         Override method to handle POST requests from the frontend interface
         """
 
-        if self.path != ROUTE:
-            response = "Error: not found".encode("utf-8")
-            self.send_response(NOT_FOUND)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(response)))
-            self.end_headers()
-            self.wfile.write(response)
+        if not self.path in POST_REQUESTS:
+            self.send_404()
             return
 
 
@@ -90,6 +129,7 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(response)))
         self.end_headers()
         self.wfile.write(response)
+
 
 
 class Server(HTTPServer):
