@@ -209,12 +209,13 @@ class WebcamRealtimeWithRepsPipeline:
                  segmentation_models_dir: str = "models/segmentation",
                  window_size: int = 30,
                  webcam_id: int = 0,
-                 shared_data: SharedData = None
+                 shared_data: SharedData = None,
+                 should_plot: bool = True
                  ):
         """
         Initialize the webcam real-time pipeline with rep counting.
         
-        Args:
+        Args:s
             classifier_model: Path to classification model
             segmentation_models_dir: Directory with segmentation models
             window_size: Window size for classification and segmentation
@@ -226,6 +227,7 @@ class WebcamRealtimeWithRepsPipeline:
         self.window_size = window_size
         self.webcam_id = webcam_id
         self.shared_data = shared_data
+        self.should_plot = should_plot
         
         # Rep counting
         self.peak_detector = RealTimePeakDetector()
@@ -286,6 +288,8 @@ class WebcamRealtimeWithRepsPipeline:
         # Start background processing thread
         processing_thread = threading.Thread(target=self._background_processor)
         processing_thread.start()
+
+        print("Segmentation data will be plotted at the end of the realtime pipeline..." if self.should_plot else "Plot of segmentation data is not activated.")
 
         print("Starting real-time webcam exercise detection with rep counting...")
         print("Perform exercises in front of the camera!")
@@ -385,7 +389,9 @@ class WebcamRealtimeWithRepsPipeline:
         
         # Print final results and plot probabilities
         self._print_results()
-        self._plot_probabilities()
+
+        if self.should_plot:
+            self._plot_probabilities()
 
         self.shared_data.update("realtime_pipeline_finished", True)
     
@@ -581,7 +587,7 @@ class WebcamRealtimeWithRepsPipeline:
         try:
             import pandas as pd
             import matplotlib.pyplot as plt
-            
+
             # Read the CSV file
             df = pd.read_csv("realtime_segmentation_probabilities.csv")
             
@@ -609,10 +615,10 @@ class WebcamRealtimeWithRepsPipeline:
             # Save the plot
             plt.savefig('realtime_segmentation_probabilities_plot.png', dpi=300, bbox_inches='tight')
             print(f"Segmentation probabilities plot saved to: realtime_segmentation_probabilities_plot.png")
-            
-            # Show the plot
-            plt.show()
-            
+
+            # Will throw an exception!!!
+            #plt.show()
+
         except ImportError:
             print("Matplotlib not available, skipping probability plot")
         except Exception as e:
@@ -637,6 +643,7 @@ def run_pipeline(shared_data: SharedData):
                        help='Directory containing segmentation models')
     parser.add_argument('--window-size', type=int, default=30,
                        help='Window size for classification')
+    parser.add_argument('--plot', action='store_true', help='Plot segmentation data at the end')
     
     args = parser.parse_args()
     
@@ -646,7 +653,8 @@ def run_pipeline(shared_data: SharedData):
         segmentation_models_dir=args.models_dir,
         window_size=args.window_size,
         webcam_id=args.webcam_id,
-        shared_data=shared_data
+        shared_data=shared_data,
+        should_plot=args.plot
     )
     
     pipeline.run()
