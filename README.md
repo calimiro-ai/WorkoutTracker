@@ -1,4 +1,4 @@
-# SmartMirror - Real-time Exercise Detection
+# Calimiro AI - Real-time Exercise Detection
 
 A computer vision system for real-time exercise classification and repetition counting using MediaPipe pose detection and deep learning models.
 
