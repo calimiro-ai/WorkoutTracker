@@ -23,7 +23,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 from core.dataset_builder import FeatureExtractor
 from core.realtime_pipeline import ExerciseClassifier
-from src.backend_interface.backend_interface import update_workout_state
+from src.backend_interface.backend_interface import update_workout_state, start_tracking_on_frontend
 from src.backend_interface.shared_data import SharedData
 
 
@@ -293,6 +293,9 @@ class WebcamRealtimeWithRepsPipeline:
 
         print("Starting real-time webcam exercise detection with rep counting...")
         print("Perform exercises in front of the camera!")
+
+        # Starts the workout tracking on the frontend
+        self._start_tracking_on_frontend()
         
         last_fps_time = time.time()
         
@@ -533,7 +536,13 @@ class WebcamRealtimeWithRepsPipeline:
         # Call frontend update function
         update_workout_state(total_reps, self.current_exercise)
 
-    
+    def _start_tracking_on_frontend(self):
+        """
+        Start tracking on frontend
+        """
+        # in backend_interface.backend_interface module
+        start_tracking_on_frontend()
+
     def _print_results(self):
         """Print final analysis results."""
         print("\n" + "="*50)

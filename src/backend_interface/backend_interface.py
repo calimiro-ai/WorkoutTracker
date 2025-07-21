@@ -56,4 +56,13 @@ def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> N
         print(f"Error: could not POST to localhost:{PORT}", file=sys.stderr)
 
 
+def start_tracking_on_frontend():
+    """
+    Sends a GET request to the frontend interface via the route WORKOUT_LOADING_EXERCISES_FINISHED (defined in server_settings.py)
+    This will kill the loading screen on the frontend and launch the workout session.
+    """
 
+    rep = rq.get(f"http://localhost:{PORT}/{WORKOUT_LOADING_EXERCISES_FINISHED}")
+
+    if rep.status_code != OK:
+        print(f"Error: could not POST to localhost:{PORT}", file=sys.stderr)

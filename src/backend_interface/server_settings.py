@@ -17,13 +17,14 @@ PORT_FRONTEND = 8080
 
 # Has to be synced with the frontend
 # Check https://github.com/ixodev/magicmirror/blob/master/modules/MMM-WorkoutTracker/node_helper.js
-ROUTE = "/workout-tracking"
-GET_AVAILABLE_EXERCISES = "/available-exercises"
-MANUAL_EXERCISE = "/set-manual-exercise"
+WORKOUT_SESSION_STATE = "/workout-session-state"
+WORKOUT_SESSION_START = "/workout-session-start"
+WORKOUT_LOADING_EXERCISES_FINISHED = "/workout-loading-exercises-finished"
+SET_MANUAL_EXERCISE = "/set-manual-exercise"
 
 # Store the different routes
-GET_REQUESTS = [GET_AVAILABLE_EXERCISES]
-POST_REQUESTS = [ROUTE, MANUAL_EXERCISE]
+GET_REQUESTS = [WORKOUT_SESSION_START]
+POST_REQUESTS = [WORKOUT_SESSION_STATE, SET_MANUAL_EXERCISE]
 
 # Status codes
 OK = 200
