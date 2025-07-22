@@ -255,7 +255,11 @@ class WebcamRealtimeWithRepsPipeline:
         # Performance tracking
         self.processing_times = deque(maxlen=30)
         self.fps_times = deque(maxlen=30)
-        
+
+        self.last_timestamp = time.time()
+        self.last_exercise_duration = 0
+        self.last_exercise = self.current_exercise
+
         # Results tracking
         self.exercise_predictions = []
         self.confidence_scores = []
@@ -336,7 +340,10 @@ class WebcamRealtimeWithRepsPipeline:
                         exercise, confidence, probability = self.result_queue.get_nowait()
                         # Update frontend if exercise changes
                         if exercise != self.current_exercise:
+                            self.last_exercise_duration = time.time() - self.last_timestamp
+                            self.last_exercise = self.current_exercise
                             self._update_frontend_state()
+                            self.last_timestamp = time.time()
                         
                         self.current_exercise = exercise
                         self.exercise_confidence = confidence
@@ -534,7 +541,7 @@ class WebcamRealtimeWithRepsPipeline:
         }
 
         # Call frontend update function
-        update_workout_state(total_reps, self.current_exercise)
+        update_workout_state(total_reps, self.current_exercise, self.last_exercise_duration, self.last_exercise)
 
     def _start_tracking_on_frontend(self):
         """

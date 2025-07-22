@@ -23,7 +23,7 @@ ROUTE = "workout-tracking"
 OK = 200
 
 
-def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> None:
+def update_workout_state(total_reps: Dict[str, int], current_exercise: str, last_exercise_duration: float, last_exercise: str) -> None:
     """
     Update the frontend with current workout state.
     
@@ -35,6 +35,8 @@ def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> N
                    Example: {'push-ups': 5, 'squats': 3, 'pull-ups': 0, 'dips': 2}
         current_exercise: Currently detected exercise (or 'unknown' if none detected)
                          Example: 'push-ups', 'squats', 'pull-ups', 'dips', 'unknown'
+        last_exercise_duration: a float which represents the duration of the last-performed exercise
+        last_exercise: a string representing the last exercise performed by the user
     
     Returns:
         None
@@ -46,7 +48,8 @@ def update_workout_state(total_reps: Dict[str, int], current_exercise: str) -> N
         "current_exercise": current_exercise,
         # If current_exercise is 'unknown' just send 0 total reps to the mirror
         "total_reps": total_reps.get(current_exercise) if current_exercise != "unknown" else '0',
-        "timestamp": None  # Can be added if needed
+        "last_exercise_duration": last_exercise_duration,
+        "last_exercise": last_exercise
     }
 
     # Make a POST request to the frontend with workout_state as JSON payload
