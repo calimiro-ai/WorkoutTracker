@@ -69,3 +69,5 @@ def start_tracking_on_frontend():
 
     if rep.status_code != OK:
         print(f"Error: could not POST to localhost:{PORT}", file=sys.stderr)
+
+        
