@@ -21,7 +21,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from core.dataset_builder import FeatureExtractor
 from core.realtime_pipeline import ExerciseClassifier
-from core.frontend_interface import update_workout_state
 
 # --- RealTimePeakDetector and SegmentationProcessor copied from realtime.py ---
 
@@ -291,8 +290,8 @@ class VideoRealtimeWithRepsPipeline:
         print("All rep counts reset!")
         self._update_frontend_state()
     def _update_frontend_state(self):
-        total_reps = {exercise: counter.get_rep_count() for exercise, counter in self.rep_counters.items()}
-        update_workout_state(total_reps, self.current_exercise)
+        # Frontend state update removed - not needed for video processing
+        pass
     def _print_results(self):
         print("\n" + "="*50)
         print("VIDEO REAL-TIME PROCESSING RESULTS WITH REP COUNTING")
