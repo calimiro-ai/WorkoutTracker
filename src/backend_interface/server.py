@@ -87,8 +87,12 @@ class HTTPRequestHandler(BaseHTTPRequestHandler):
             # Try to deserialize json payload
             data = json.loads(post_body)
 
-            for key in data:
-                self.server.shared_data.update(key, data[key])
+            if self.path == WORKOUT_SESSION_STATE:
+                for key in data:
+                    self.server.shared_data.update(key, data[key])
+
+            elif self.path == SET_MANUAL_EXERCISE:
+                self.server.shared_data.update("current_selected_exercise", data["current_selected_exercise"])
 
         except Exception as ex:
 

@@ -339,12 +339,22 @@ class WebcamRealtimeWithRepsPipeline:
                     while not self.result_queue.empty():
                         exercise, confidence, probability = self.result_queue.get_nowait()
                         # Update frontend if exercise changes
+
+                        selected_exercise = self.shared_data.get("current_selected_exercise")
+
+                        if selected_exercise is not None:
+                            self.shared_data.pop("current_selected_exercise", None)
+                            exercise = selected_exercise
+                            confidence = 1
+                            probability = 1.0
+
                         if exercise != self.current_exercise:
                             self.last_exercise_duration = time.time() - self.last_timestamp
                             self.last_exercise = self.current_exercise
+                            self.current_exercise = exercise
                             self._update_frontend_state()
                             self.last_timestamp = time.time()
-                        
+
                         self.current_exercise = exercise
                         self.exercise_confidence = confidence
                         self.current_probability = probability
