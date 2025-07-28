@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+
 """
-Real-time webcam exercise detection with live rep counting using peak detection
+Real-time webcam exercise detection with live rep counting using peak detection.
 """
 
 import cv2
@@ -14,13 +15,16 @@ from collections import deque
 from typing import Optional, Dict, List, Tuple
 from queue import Queue
 import csv
+import datetime as dt
 
 # Add the src directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))  # Ajustez selon la structure du dossier
+
 
 from core.dataset_builder import FeatureExtractor
 from core.realtime_pipeline import ExerciseClassifier
-from core.frontend_interface import update_workout_state
+from src.backend_interface.backend_interface import update_workout_state, start_tracking_on_frontend
+from src.backend_interface.shared_data import SharedData
 
 
 class RealTimePeakDetector:
@@ -78,7 +82,7 @@ class RealTimePeakDetector:
         peak_detected = False
         
         if probability > self.last_probability:
-            # Rising - update peak candidate to highest point
+            # Rising - update peak candidate to the highest point
             if not self.rising:
                 self.rising = True
             self.peak_candidate = (frame_idx, probability)
@@ -204,11 +208,14 @@ class WebcamRealtimeWithRepsPipeline:
                  classifier_model: str = "models/classification/exercise_classifier.keras",
                  segmentation_models_dir: str = "models/segmentation",
                  window_size: int = 30,
-                 webcam_id: int = 0):
+                 webcam_id: int = 0,
+                 shared_data: SharedData = None,
+                 should_plot: bool = True
+                 ):
         """
         Initialize the webcam real-time pipeline with rep counting.
         
-        Args:
+        Args:s
             classifier_model: Path to classification model
             segmentation_models_dir: Directory with segmentation models
             window_size: Window size for classification and segmentation
@@ -219,6 +226,8 @@ class WebcamRealtimeWithRepsPipeline:
         self.feature_extractor = FeatureExtractor()
         self.window_size = window_size
         self.webcam_id = webcam_id
+        self.shared_data = shared_data
+        self.should_plot = should_plot
         
         # Rep counting
         self.peak_detector = RealTimePeakDetector()
@@ -246,14 +255,18 @@ class WebcamRealtimeWithRepsPipeline:
         # Performance tracking
         self.processing_times = deque(maxlen=30)
         self.fps_times = deque(maxlen=30)
-        
+
+        self.last_timestamp = time.time()
+        self.last_exercise_duration = 0
+        self.last_exercise = self.current_exercise
+
         # Results tracking
         self.exercise_predictions = []
         self.confidence_scores = []
         self.probability_scores = []
         
         print(f"Webcam real-time pipeline with rep counting initialized")
-        print(f"Press 'q' to quit, 'r' to reset counts")
+        print(f"Press 'q' to quit, 'r' to reset counts, 't' to send data batch")
     
     def run(self):
         """Run the real-time webcam pipeline with rep counting."""
@@ -279,14 +292,23 @@ class WebcamRealtimeWithRepsPipeline:
         # Start background processing thread
         processing_thread = threading.Thread(target=self._background_processor)
         processing_thread.start()
-        
+
+        print("Segmentation data will be plotted at the end of the realtime pipeline..." if self.should_plot else "Plot of segmentation data is not activated.")
+
         print("Starting real-time webcam exercise detection with rep counting...")
         print("Perform exercises in front of the camera!")
+
+        # Starts the workout tracking on the frontend
+        self._start_tracking_on_frontend()
         
         last_fps_time = time.time()
         
         try:
             while True:
+
+                if self.shared_data.get("stopped"):
+                    break
+
                 frame_start_time = time.time()
                 
                 # Capture frame
@@ -317,9 +339,22 @@ class WebcamRealtimeWithRepsPipeline:
                     while not self.result_queue.empty():
                         exercise, confidence, probability = self.result_queue.get_nowait()
                         # Update frontend if exercise changes
+
+                        selected_exercise = self.shared_data.get("current_selected_exercise")
+
+                        if selected_exercise is not None:
+                            self.shared_data.pop("current_selected_exercise", None)
+                            exercise = selected_exercise
+                            confidence = 1
+                            probability = 1.0
+
                         if exercise != self.current_exercise:
+                            self.last_exercise_duration = time.time() - self.last_timestamp
+                            self.last_exercise = self.current_exercise
+                            self.current_exercise = exercise
                             self._update_frontend_state()
-                        
+                            self.last_timestamp = time.time()
+
                         self.current_exercise = exercise
                         self.exercise_confidence = confidence
                         self.current_probability = probability
@@ -356,12 +391,16 @@ class WebcamRealtimeWithRepsPipeline:
                     break
                 elif key == ord('r'):
                     self._reset_all_counts()
+                # Test purpose to update frontend without counting a new rep
+                elif key == ord('t'):
+                    self._update_frontend_state()
                 
                 self.frame_count += 1
         
         finally:
             # Stop background processing
             self.running = False
+
             processing_thread.join()
             
             cap.release()
@@ -370,11 +409,16 @@ class WebcamRealtimeWithRepsPipeline:
         
         # Print final results and plot probabilities
         self._print_results()
-        self._plot_probabilities()
+
+        if self.should_plot:
+            self._plot_probabilities()
+
+        self.shared_data.update("realtime_pipeline_finished", True)
     
     def _background_processor(self):
         """Background thread for model inference."""
         while self.running:
+
             try:
                 # Get features from queue
                 frame_idx, features = self.feature_queue.get(timeout=0.1)
@@ -424,63 +468,68 @@ class WebcamRealtimeWithRepsPipeline:
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (width, 180), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
-        
-        # Exercise information
-        exercise_text = f"Exercise: {self.current_exercise.upper()}"
-        confidence_text = f"Confidence: {self.exercise_confidence:.3f}"
-        probability_text = f"Rep Probability: {self.current_probability:.3f}"
-        
-        # Color based on confidence
-        if self.exercise_confidence > 0.7:
-            color = (0, 255, 0)  # Green
-        elif self.exercise_confidence > 0.5:
-            color = (0, 255, 255)  # Yellow
+
+        # Has the user paused the session?
+        if self.shared_data.get("paused"):
+            cv2.putText(frame, "PAUSED", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
         else:
-            color = (0, 0, 255)  # Red
-        
-        cv2.putText(frame, exercise_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
-                   0.8, color, 2)
-        cv2.putText(frame, confidence_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 
-                   0.6, (255, 255, 255), 2)
-        
-        # Segmentation probability with color coding
-        if self.current_probability > 0.7:
-            prob_color = (0, 255, 0)  # Green - high probability of rep
-        elif self.current_probability > 0.5:
-            prob_color = (0, 255, 255)  # Yellow - medium probability
-        else:
-            prob_color = (0, 0, 255)  # Red - low probability
-        
-        cv2.putText(frame, probability_text, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 
-                   0.6, prob_color, 2)
-        
-        # Rep counting information
-        if self.current_exercise in self.rep_counters:
-            counter = self.rep_counters[self.current_exercise]
-            rep_count = counter.get_rep_count()
-            avg_rep_time = counter.get_avg_rep_time()
-            
-            rep_text = f"Reps: {rep_count}"
-            cv2.putText(frame, rep_text, (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 
-                       0.8, (255, 255, 0), 2)  # Yellow for rep count
-            
-            if avg_rep_time > 0:
-                time_text = f"Avg Time: {avg_rep_time:.1f}s"
-                cv2.putText(frame, time_text, (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 
-                           0.6, (255, 255, 255), 2)
-        
-        # Performance metrics
-        if self.processing_times:
-            avg_time = np.mean(self.processing_times) * 1000  # Convert to ms
-            cv2.putText(frame, f"Model FPS: {1000/avg_time:.1f}", (width - 150, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
-        # Webcam FPS
-        if self.fps_times:
-            webcam_fps = 1.0 / np.mean(self.fps_times)
-            cv2.putText(frame, f"Webcam FPS: {webcam_fps:.1f}", (width - 150, 55), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
+            # Exercise information
+            exercise_text = f"Exercise: {self.current_exercise.upper()}"
+            confidence_text = f"Confidence: {self.exercise_confidence:.3f}"
+            probability_text = f"Rep Probability: {self.current_probability:.3f}"
+
+            # Color based on confidence
+            if self.exercise_confidence > 0.7:
+                color = (0, 255, 0)  # Green
+            elif self.exercise_confidence > 0.5:
+                color = (0, 255, 255)  # Yellow
+            else:
+                color = (0, 0, 255)  # Red
+
+            cv2.putText(frame, exercise_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                       0.8, color, 2)
+            cv2.putText(frame, confidence_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
+                       0.6, (255, 255, 255), 2)
+
+            # Segmentation probability with color coding
+            if self.current_probability > 0.7:
+                prob_color = (0, 255, 0)  # Green - high probability of rep
+            elif self.current_probability > 0.5:
+                prob_color = (0, 255, 255)  # Yellow - medium probability
+            else:
+                prob_color = (0, 0, 255)  # Red - low probability
+
+            cv2.putText(frame, probability_text, (10, 90), cv2.FONT_HERSHEY_SIMPLEX,
+                       0.6, prob_color, 2)
+
+            # Rep counting information
+            if self.current_exercise in self.rep_counters:
+                counter = self.rep_counters[self.current_exercise]
+                rep_count = counter.get_rep_count()
+                avg_rep_time = counter.get_avg_rep_time()
+
+                rep_text = f"Reps: {rep_count}"
+                cv2.putText(frame, rep_text, (10, 120), cv2.FONT_HERSHEY_SIMPLEX,
+                           0.8, (255, 255, 0), 2)  # Yellow for rep count
+
+                if avg_rep_time > 0:
+                    time_text = f"Avg Time: {avg_rep_time:.1f}s"
+                    cv2.putText(frame, time_text, (10, 150), cv2.FONT_HERSHEY_SIMPLEX,
+                               0.6, (255, 255, 255), 2)
+
+            # Performance metrics
+            if self.processing_times:
+                avg_time = np.mean(self.processing_times) * 1000  # Convert to ms
+                cv2.putText(frame, f"Model FPS: {1000/avg_time:.1f}", (width - 150, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+            # Webcam FPS
+            if self.fps_times:
+                webcam_fps = 1.0 / np.mean(self.fps_times)
+                cv2.putText(frame, f"Webcam FPS: {webcam_fps:.1f}", (width - 150, 55),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
         # Instructions
         cv2.putText(frame, "Press 'q' to quit, 'r' to reset", (10, 170), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
@@ -500,10 +549,17 @@ class WebcamRealtimeWithRepsPipeline:
             exercise: counter.get_rep_count()
             for exercise, counter in self.rep_counters.items()
         }
-        
+
         # Call frontend update function
-        update_workout_state(total_reps, self.current_exercise)
-    
+        update_workout_state(total_reps, self.current_exercise, self.last_exercise_duration, self.last_exercise)
+
+    def _start_tracking_on_frontend(self):
+        """
+        Start tracking on frontend
+        """
+        # in backend_interface.backend_interface module
+        start_tracking_on_frontend()
+
     def _print_results(self):
         """Print final analysis results."""
         print("\n" + "="*50)
@@ -557,7 +613,7 @@ class WebcamRealtimeWithRepsPipeline:
         try:
             import pandas as pd
             import matplotlib.pyplot as plt
-            
+
             # Read the CSV file
             df = pd.read_csv("realtime_segmentation_probabilities.csv")
             
@@ -577,7 +633,7 @@ class WebcamRealtimeWithRepsPipeline:
             
             plt.xlabel('Frame Number')
             plt.ylabel('Repetition Probability')
-            plt.title('Real-Time Exercise Repetition Detection Probabilities')
+            plt.title(f'Real-Time Exercise Repetition Detection Probabilities ({dt.datetime.now()})')
             plt.legend()
             plt.grid(True, alpha=0.3)
             plt.ylim(0, 1)
@@ -585,18 +641,22 @@ class WebcamRealtimeWithRepsPipeline:
             # Save the plot
             plt.savefig('realtime_segmentation_probabilities_plot.png', dpi=300, bbox_inches='tight')
             print(f"Segmentation probabilities plot saved to: realtime_segmentation_probabilities_plot.png")
-            
-            # Show the plot
-            plt.show()
-            
+
+            # Will throw an exception!!!
+            #plt.show()
+
         except ImportError:
             print("Matplotlib not available, skipping probability plot")
         except Exception as e:
             print(f"Error plotting probabilities: {e}")
 
 
-def main():
-    """Main function for command-line usage."""
+def run_pipeline(shared_data: SharedData):
+
+    """
+    Run the whole realtime model + OpenCV capture & rendering pipeline
+    """
+
     import argparse
     
     parser = argparse.ArgumentParser(description='Real-time webcam exercise detection with rep counting')
@@ -609,6 +669,7 @@ def main():
                        help='Directory containing segmentation models')
     parser.add_argument('--window-size', type=int, default=30,
                        help='Window size for classification')
+    parser.add_argument('--plot', action='store_true', help='Plot segmentation data at the end')
     
     args = parser.parse_args()
     
@@ -617,11 +678,28 @@ def main():
         classifier_model=args.classifier,
         segmentation_models_dir=args.models_dir,
         window_size=args.window_size,
-        webcam_id=args.webcam_id
+        webcam_id=args.webcam_id,
+        shared_data=shared_data,
+        should_plot=args.plot
     )
     
     pipeline.run()
 
+# Should only be used in test-case, without server support
+def main():
 
+    """
+    Main function
+    """
+
+    shared_data = SharedData()
+    shared_data.update("paused", False)
+    shared_data.update("stopped", False)
+
+    run_pipeline(shared_data)
+
+
+# Test case
 if __name__ == '__main__':
-    main() 
+    main()
+

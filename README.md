@@ -1,4 +1,4 @@
-# SmartMirror - Real-time Exercise Detection
+# Calimiro AI - Real-time Exercise Detection
 
 A computer vision system for real-time exercise classification and repetition counting using MediaPipe pose detection and deep learning models.
 
@@ -6,41 +6,48 @@ A computer vision system for real-time exercise classification and repetition co
 
 ```
 SmartMirror/
-├── 📁 src/                      # Source code
-│   ├── 📁 core/                 # Core functionality
-│   │   ├── realtime_pipeline.py # Main real-time pipeline
-│   │   ├── dataset_builder.py   # Dataset creation and management
+├── 📁 src/                        Source code
+│   ├── 📁 backend_interface/
+│   │   ├── backend_interface.py   Backend interface to communicate with the mirror
+│   │   ├── server.py              HTTP server to receive data batches from the mirror
+│   │   └── shared_data.py         Thread-Safe IPC
+│   ├── 📁 core/                   Core functionality
+│   │   ├── realtime_pipeline.py   Main realtime pipeline
+│   │   ├── dataset_builder.py     Dataset creation and management
+│   │   ├── realtime.py            Realtime model & OpenCV rendering
+│   │   ├── realtime_no_counting.py
+│   │   ├── main.py                Main script
 │   │   └── __init__.py
-│   ├── 📁 training/             # Model training
-│   │   ├── train_classifier.py  # Classification model training
-│   │   ├── retrain_segmentation_realtime.py # Real-time segmentation training
-│   │   ├── classification/      # Classification modules
-│   │   └── segmentation/        # Segmentation modules
-│   ├── 📁 testing/              # Testing and debugging
-│   │   ├── test_*.py           # Various test scripts
+│   ├── 📁 training/               Model training
+│   │   ├── train_classifier.py    Classification model training
+│   │   ├── retrain_segmentation_realtime.py   Real-time segmentation training
+│   │   ├── classification/        Classification modules
+│   │   └── segmentation/          Segmentation modules
+│   ├── 📁 testing/                Testing and debugging
+│   │   ├── test_*.py              Various test scripts
 │   │   ├── debug_classification.py
 │   │   └── inspect_classification_dataset.py
-│   ├── 📁 utils/                # Utility scripts
+│   ├── 📁 utils/                  Utility scripts
 │   │   ├── classification_demo.py
 │   │   ├── segmentation_demo.py
 │   │   ├── mediapipe_demo.py
 │   │   └── video_labeler.py
 │   └── __init__.py
-├── 📁 data/                     # Data storage
-│   ├── 📁 raw/                  # Raw video files
-│   ├── 📁 processed/            # Processed datasets
-│   └── 📁 labels/               # Annotation files
-├── 📁 models/                   # Trained models
-│   ├── 📁 classification/       # Classification models
-│   └── 📁 segmentation/         # Segmentation models
-├── 📁 logs/                     # Training logs
-├── 📁 output_videos/            # Output videos
-├── 📁 test_videos/              # Test videos
-├── 📁 docs/                     # Documentation
-├── 📁 scripts/                  # Utility scripts
-├── 🐍 run_realtime.py           # Main entry point
-├── 📄 requirements.txt          # Dependencies
-└── 📄 README.md                 # This file
+├── 📁 data/                       Data storage
+│   ├── 📁 raw/                    Raw video files
+│   ├── 📁 processed/              Processed datasets
+│   └── 📁 labels/                 Annotation files
+├── 📁 models/                     Trained models
+│   ├── 📁 classification/         Classification models
+│   └── 📁 segmentation/           Segmentation models
+├── 📁 logs/                       Training logs
+├── 📁 output_videos/              Output videos
+├── 📁 test_videos/                Test videos
+├── 📁 docs/                       Documentation
+├── 📁 scripts/                    Utility scripts
+├── 🐍 run_realtime.py             Main entry point
+├── 📄 requirements.txt            Dependencies
+└── 📄 README.md                   This file
 ```
 
 ## 🚀 Quick Start

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Real-Time Exercise Detection & Rep Counting Pipeline
+Real-Time Exercise Detection & Rep Counting Pipeline.
 
 This module provides a complete real-time pipeline that:
 1. Captures video from ESP32-CAM or webcam
