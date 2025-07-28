@@ -163,11 +163,18 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Train model using frame-based dataset and sliding windows'
+        description='Label exercise videos for segmentation training'
     )
-    parser.add_argument('--input', type=str, default='',
-                        help='Pfad zum Video Subfolder')
+    parser.add_argument('--exercise', type=str, required=True,
+                        help='Exercise name (e.g., squats, push-ups, pull-ups, dips)')
     args = parser.parse_args()
 
-    segmenter = VideoSegmenter(videos_dir=f"videos/{args.input}", labels_dir=f"labeled_videos/{args.input}")
+    # Updated paths to match new file structure
+    videos_dir = f"data/raw/{args.exercise}"
+    labels_dir = f"data/labels/{args.exercise}"
+    
+    print(f"Labeling videos in: {videos_dir}")
+    print(f"Saving labels to: {labels_dir}")
+    
+    segmenter = VideoSegmenter(videos_dir=videos_dir, labels_dir=labels_dir)
     segmenter.batch_label_all()
