@@ -1,6 +1,5 @@
 # Data directories
 data/processed/
-data/raw/
 output_videos/
 
 # Python
