@@ -13,7 +13,7 @@ import mediapipe as mp
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.video_labeler import VideoSegmenter
+# from utils.video_labeler import VideoSegmenter  # Removed - not needed for multitask
 
 
 class LabelAugmenter:
@@ -188,7 +188,7 @@ class SegmentationDatasetBuilder:
         self.labels_dir = labels_dir
         self.augmenter = LabelAugmenter(fps, margin_sec=0.3)  # Increased from 0.1s to 0.3s
         self.extractor = FeatureExtractor()
-        self.segmenter = VideoSegmenter(videos_dir=videos_dir, labels_dir=labels_dir)
+        # # self.segmenter = VideoSegmenter(videos_dir=videos_dir, labels_dir=labels_dir)  # Not needed for multitask  # Not needed for multitask
 
     def build(self, exercise_type: str) -> tuple[np.ndarray, np.ndarray]:
         """
