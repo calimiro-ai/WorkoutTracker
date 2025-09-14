@@ -2,7 +2,7 @@
 """
 Multitask Real-time Demo with Saved Plots and Videos
 
-Real-time demonstration of the multitask TCN model with 3 FPS processing.
+Real-time demonstration of the multitask TCN model with 30 FPS processing.
 Saves exercise classification, repetition counting, and confidence trends as plots.
 Also saves annotated output videos.
 """
@@ -18,6 +18,8 @@ from collections import deque
 import time
 import datetime as dt
 from typing import Tuple, List, Dict
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
@@ -27,9 +29,9 @@ from core.dataset_builder import FeatureExtractor
 from demo.signal_processor import SignalProcessor
 
 class RealtimeDemoSavePlots:
-    """Real-time demo with 3 FPS processing and saved plots and videos."""
+    """Real-time demo with 30 FPS processing and saved plots and videos."""
     
-    def __init__(self, model_path: str, metadata_path: str = None, target_fps: int = 3):
+    def __init__(self, model_path: str, metadata_path: str = None, target_fps: int = 30):
         """
         Initialize the real-time demo with plot and video saving.
         
@@ -64,8 +66,8 @@ class RealtimeDemoSavePlots:
         
         # Processing parameters
         self.target_fps = target_fps
-        self.window_size = 15
-        self.frame_skip = 30 // target_fps  # Skip frames for 3 FPS processing
+        self.window_size = 30
+        self.frame_skip = 30 // target_fps  # Skip frames for 30 FPS processing
         
         # State variables
         self.feature_window = deque(maxlen=self.window_size)
@@ -458,7 +460,8 @@ class RealtimeDemoSavePlots:
             json.dump(analysis_data, f, indent=2)
         print(f"Analysis data saved: {data_path}")
         
-        plt.show()
+        # Close the figure to free memory
+        plt.close(fig)
 
 
 def main():

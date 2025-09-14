@@ -229,8 +229,8 @@ def build_multitask_tcn_model(
     # Segmentation loss (binary focal crossentropy for class imbalance)
     segmentation_loss = BinaryFocalCrossentropy(
         from_logits=False,
-        alpha=0.75,  # Weight positive samples more heavily
-        gamma=2.0,   # Focus on hard examples
+        alpha=0.99,  # Extreme weight for positive samples (1:52 imbalance)
+        gamma=5.0,   # Very high gamma to strongly penalize easy negatives
     )
     
     # Optimizer

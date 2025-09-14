@@ -18,30 +18,71 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 class LabelAugmenter:
     """
-    Augments binary labels by expanding rep-start markers in a temporal window.
+    Augments binary labels by creating Gaussian distributions around rep-start markers.
     
-    This helps the model learn the temporal context around repetition starts.
+    This creates more realistic probability distributions that help with class imbalance.
     """
     
-    def __init__(self, fps: int = 30, margin_sec: float = 0.1):
+    def __init__(self, fps: int = 30, margin_sec: float = 0.8, use_gaussian: bool = True):
         """
         Initialize the label augmenter.
         
         Args:
             fps: Frames per second of the videos
             margin_sec: Time margin in seconds to expand around labels
+            use_gaussian: If True, use Gaussian distribution; if False, use binary expansion
         """
         self.margin = int(fps * margin_sec)
+        self.use_gaussian = use_gaussian
 
     def augment(self, labels: np.ndarray) -> np.ndarray:
         """
-        Expand binary labels by adding margin around positive samples.
+        Augment labels with either Gaussian distributions or binary expansion.
         
         Args:
             labels: Binary array where 1 indicates repetition start
             
         Returns:
             Augmented labels with expanded positive regions
+        """
+        if self.use_gaussian:
+            return self._gaussian_augment(labels)
+        else:
+            return self._binary_augment(labels)
+    
+    def _gaussian_augment(self, labels: np.ndarray) -> np.ndarray:
+        """
+        Create Gaussian distributions around rep peaks.
+        
+        Creates a more natural probability distribution:
+        - Peak value = 1.0 at rep start
+        - Gaussian falloff with sigma = margin/3 (99.7% within margin)
+        - Helps model learn gradual transitions instead of sharp binary changes
+        """
+        aug = np.zeros_like(labels, dtype=np.float32)
+        ones = np.where(labels == 1.0)[0]
+        
+        # Gaussian parameters
+        sigma = self.margin / 3.0  # 3-sigma rule: 99.7% of data within margin
+        
+        for peak_idx in ones:
+            # Create Gaussian around this peak
+            start = max(0, peak_idx - self.margin)
+            end = min(len(labels), peak_idx + self.margin + 1)
+            
+            for i in range(start, end):
+                # Gaussian formula: exp(-0.5 * ((x - mu) / sigma)^2)
+                distance = abs(i - peak_idx)
+                gaussian_value = np.exp(-0.5 * (distance / sigma) ** 2)
+                
+                # Take maximum if overlapping Gaussians
+                aug[i] = max(aug[i], gaussian_value)
+                
+        return aug
+    
+    def _binary_augment(self, labels: np.ndarray) -> np.ndarray:
+        """
+        Original binary expansion method (for backwards compatibility).
         """
         aug = labels.copy()
         ones = np.where(labels == 1.0)[0]
