@@ -13,14 +13,14 @@ Architecture Overview:
 
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers, metrics
-from tensorflow.keras.losses import SparseCategoricalCrossentropy, BinaryFocalCrossentropy
+from tensorflow.keras.losses import SparseCategoricalCrossentropy, BinaryCrossentropy
 from tensorflow.keras.utils import plot_model
 import numpy as np
 
 
 def ResidualTCNBlock(x, filters, kernel_size, dilation_rate, dropout_rate=0.0, name_prefix="tcn"):
     """
-    Functional implementation of a TCN residual block with improved architecture.
+    Functional implementation of a TCN residual block with better architecture.
     
     Architecture:
       - Conv1D (causal) → LayerNorm → ReLU → Dropout
@@ -96,7 +96,7 @@ def AttentionBlock(x, name_prefix="attention"):
 
 def build_multitask_tcn_model(
     input_dim=25,
-    num_classes=5,
+    num_classes=4,
     window_size=30,
     # Shared backbone parameters
     backbone_filters=64,
@@ -109,7 +109,7 @@ def build_multitask_tcn_model(
     use_attention=True,
     # Loss weights
     classification_weight=1.0,
-    segmentation_weight=1.0,
+    segmentation_weight=5.0,
     # Optimizer parameters
     learning_rate=1e-3
 ):
@@ -226,12 +226,8 @@ def build_multitask_tcn_model(
     # Classification loss (sparse categorical crossentropy)
     classification_loss = SparseCategoricalCrossentropy(from_logits=False)
     
-    # Segmentation loss (binary focal crossentropy for class imbalance)
-    segmentation_loss = BinaryFocalCrossentropy(
-        from_logits=False,
-        alpha=0.99,  # Extreme weight for positive samples (1:52 imbalance)
-        gamma=5.0,   # Very high gamma to strongly penalize easy negatives
-    )
+    # Segmentation loss (binary crossentropy for better probability calibration)
+    segmentation_loss = BinaryCrossentropy(from_logits=False)
     
     # Optimizer
     optimizer = optimizers.Adam(learning_rate=learning_rate)
@@ -255,8 +251,6 @@ def build_multitask_tcn_model(
             'segmentation_output': [
                 metrics.AUC(name='seg_auc'),
                 metrics.Precision(name='seg_precision'),
-                metrics.Recall(name='seg_recall'),
-                metrics.BinaryAccuracy(name='seg_accuracy')
             ]
         }
     )
@@ -289,7 +283,7 @@ def create_inference_model(trained_model):
 
 def get_model_summary(
     input_dim=25, 
-    num_classes=5, 
+    num_classes=4, 
     window_size=30,
     backbone_filters=64,
     backbone_layers=6
@@ -319,7 +313,7 @@ def get_model_summary(
 
 def save_model_plot(
     input_dim=25, 
-    num_classes=5, 
+    num_classes=4, 
     window_size=30,
     output_path='multitask_tcn_model.png',
     **kwargs  # Accept any additional arguments
@@ -351,7 +345,7 @@ def save_model_plot(
 
 def analyze_model_complexity(
     input_dim=25,
-    num_classes=5, 
+    num_classes=4, 
     window_size=30,
     backbone_filters=64,
     backbone_layers=6,

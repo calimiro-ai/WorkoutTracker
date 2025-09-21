@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Multitask Trainer for 30 FPS Processing
+Multitask Trainer
 
-Handles training of the multitask TCN model with 30 FPS processing.
+Includes no_exercise data with rep probability 0, better class balancing,
+and more negative samples for improved recall.
 """
 
 import os
@@ -19,14 +20,14 @@ import numpy as np
 
 class MultitaskTrainer:
     """
-    Trainer for multitask TCN model with 30 FPS processing.
+    Improved trainer for multitask TCN model with better recall.
     """
     
     def __init__(self, videos_dir: str = "data/raw", labels_dir: str = "data/labels", 
-                 fps: int = 30, experiment_name: str = "multitask_tcn_30fps", 
+                 fps: int = 30, experiment_name: str = "main", 
                  output_dir: str = "models"):
         """
-        Initialize the multitask trainer.
+        Initialize the improved multitask trainer.
         """
         self.videos_dir = videos_dir
         self.labels_dir = labels_dir
@@ -39,54 +40,80 @@ class MultitaskTrainer:
         os.makedirs(self.experiment_dir, exist_ok=True)
         
         # Dataset file path
-        self.dataset_path = "data/processed/multitask_dataset_30fps.npz"
+        self.dataset_path = "data/processed/multitask_dataset.npz"
         
-        # Model configuration
+        # Improved model configuration for better recall
         self.model_config = {
             'input_dim': 25,
-            'num_classes': 5,
-            'window_size': 30,  # 30 frames = 1 second at 30fps
+            'num_classes': 5,  # Include no_exercise class
+            'window_size': 30,
             'backbone_filters': 128,
-            'backbone_layers': 6,
+            'backbone_layers': 8,
             'kernel_size': 3,
-            'dropout_rate': 0.2,
-            'classification_units': [64, 32],
-            'segmentation_units': [64, 32],
+            'dropout_rate': 0.25,
+            'classification_units': [128, 64, 32],
+            'segmentation_units': [128, 64, 32],
+            'use_attention': True,
             'classification_weight': 1.0,
-            'segmentation_weight': 1.0,
+            'segmentation_weight': 5.0,
+            'learning_rate': 5e-4,
         }
         
-        print(f"Multitask trainer initialized:")
+        # Balanced focal loss configuration
+        self.focal_loss_config = {
+            'gamma': 1.0,
+            'alpha': 0.5  # More balanced between classes
+        }
+        
+        print(f"Improved multitask trainer initialized:")
         print(f"  FPS: {fps}")
-        print(f"  Window size: {self.model_config['window_size']} frames")
         print(f"  Experiment: {experiment_name}")
-        print(f"  Output dir: {self.experiment_dir}")
-        print(f"  Dataset: {self.dataset_path}")
+        print(f"  Output directory: {self.experiment_dir}")
+        print(f"  Classes: {self.model_config['num_classes']} (including no_exercise)")
+        print(f"  Focal loss: gamma={self.focal_loss_config['gamma']}, alpha={self.focal_loss_config['alpha']}")
+        print(f"  Segmentation weight: {self.model_config['segmentation_weight']}")
     
     def load_dataset(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
         """
         Load the multitask dataset.
         
         Returns:
-            Tuple of (X, y_classification, y_segmentation, metadata)
+            Tuple of (features, classification_labels, segmentation_labels, metadata)
         """
         if not os.path.exists(self.dataset_path):
+            print(f"Dataset not found at {self.dataset_path}")
+            print("Please run the dataset builder first:")
+            print("python src/core/dataset_builder.py")
             raise FileNotFoundError(f"Dataset not found: {self.dataset_path}")
         
         print(f"Loading dataset from {self.dataset_path}...")
-        data = np.load(self.dataset_path, allow_pickle=True)
         
+        # Load dataset
+        data = np.load(self.dataset_path, allow_pickle=True)
         X = data['X']
         y_classification = data['y_classification']
         y_segmentation = data['y_segmentation']
         metadata = data['metadata'].item()
         
-        print(f"Dataset loaded:")
+        print(f"Dataset loaded successfully:")
         print(f"  Features shape: {X.shape}")
         print(f"  Classification labels shape: {y_classification.shape}")
         print(f"  Segmentation labels shape: {y_segmentation.shape}")
-        print(f"  Exercise types: {metadata['exercise_types']}")
-        print(f"  Processing FPS: {metadata.get('fps', 'unknown')}")
+        
+        # Print class distribution
+        unique_classes, class_counts = np.unique(y_classification, return_counts=True)
+        print(f"  Class distribution:")
+        for cls, count in zip(unique_classes, class_counts):
+            percentage = count / len(y_classification) * 100
+            print(f"    Class {cls}: {count} samples ({percentage:.1f}%)")
+        
+        # Print segmentation statistics
+        print(f"  Segmentation statistics:")
+        print(f"    Max: {np.max(y_segmentation):.3f}")
+        print(f"    Mean: {np.mean(y_segmentation):.3f}")
+        print(f"    Std: {np.std(y_segmentation):.3f}")
+        print(f"    Values > 0.5: {np.sum(y_segmentation > 0.5)} / {y_segmentation.size} ({np.sum(y_segmentation > 0.5)/y_segmentation.size*100:.1f}%)")
+        print(f"    Values = 1.0: {np.sum(y_segmentation == 1.0)} / {y_segmentation.size} ({np.sum(y_segmentation == 1.0)/y_segmentation.size*100:.1f}%)")
         
         return X, y_classification, y_segmentation, metadata
     
@@ -95,28 +122,16 @@ class MultitaskTrainer:
                     random_state: int = 42) -> Tuple[np.ndarray, np.ndarray, np.ndarray, 
                                                    np.ndarray, np.ndarray, np.ndarray]:
         """
-        Prepare data for training by splitting into train/validation sets.
-        
-        Args:
-            X: Feature sequences
-            y_classification: Classification labels
-            y_segmentation: Segmentation labels
-            test_size: Fraction of data to use for validation
-            random_state: Random seed for reproducibility
-            
-        Returns:
-            Tuple of (X_train, X_val, y_cls_train, y_cls_val, y_seg_train, y_seg_val)
+        Prepare data for training with train/validation split.
         """
-        print(f"Preparing data with {test_size:.1%} validation split...")
+        print("Preparing data for training...")
         
-        # Split the data
-        X_train, X_val, y_cls_train, y_cls_val = train_test_split(
-            X, y_classification, test_size=test_size, random_state=random_state, stratify=y_classification
-        )
-        
-        # Split segmentation labels accordingly
-        _, _, y_seg_train, y_seg_val = train_test_split(
-            X, y_segmentation, test_size=test_size, random_state=random_state, stratify=y_classification
+        # Split data
+        X_train, X_val, y_cls_train, y_cls_val, y_seg_train, y_seg_val = train_test_split(
+            X, y_classification, y_segmentation,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=y_classification
         )
         
         print(f"Data split:")
@@ -128,20 +143,20 @@ class MultitaskTrainer:
     def create_model(self) -> tf.keras.Model:
         """
         Create the multitask TCN model.
-        
-        Returns:
-            Compiled Keras model
         """
         print("Creating multitask TCN model...")
         
         model = build_multitask_tcn_model(**self.model_config)
         
-        # Compile the model
+        # Compile model with improved loss functions
         model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=self.model_config['learning_rate']),
             loss={
-                'classification_output': SparseCategoricalCrossentropy(from_logits=False),
-                'segmentation_output': BinaryFocalCrossentropy(alpha=0.99, gamma=5.0)
+                'classification_output': SparseCategoricalCrossentropy(),
+                'segmentation_output': BinaryFocalCrossentropy(
+                    gamma=self.focal_loss_config['gamma'],
+                    alpha=self.focal_loss_config['alpha']
+                )
             },
             loss_weights={
                 'classification_output': self.model_config['classification_weight'],
@@ -149,96 +164,79 @@ class MultitaskTrainer:
             },
             metrics={
                 'classification_output': ['accuracy'],
-                'segmentation_output': ['binary_accuracy']
+                'segmentation_output': ['accuracy', 'precision', 'recall', 'auc']
             }
         )
         
-        print(f"Model created with {model.count_params():,} parameters")
+        print("Model created and compiled successfully!")
         return model
     
     def train(self, X_train: np.ndarray, y_cls_train: np.ndarray, y_seg_train: np.ndarray,
               X_val: np.ndarray, y_cls_val: np.ndarray, y_seg_val: np.ndarray,
-              epochs: int = 100, batch_size: int = 32, use_balanced_sampling: bool = True,
-              positive_ratio: float = 0.3) -> tf.keras.Model:
+              epochs: int = 250, batch_size: int = 32, use_balanced_sampling: bool = True,
+              positive_ratio: float = 0.2, patience: int = 20, window_size: int = 30) -> tf.keras.Model:
         """
-        Train the multitask model.
+        Train the improved multitask model with better recall.
+        """
+        print("Starting improved training for better recall...")
+        print(f"Training configuration:")
+        print(f"  Epochs: {epochs}")
+        print(f"  Batch size: {batch_size}")
+        print(f"  Patience: {patience}")
+        print(f"  Balanced sampling: {use_balanced_sampling}")
+        print(f"  Positive ratio: {positive_ratio}")
         
-        Args:
-            X_train: Training features
-            y_cls_train: Training classification labels
-            y_seg_train: Training segmentation labels
-            X_val: Validation features
-            y_cls_val: Validation classification labels
-            y_seg_val: Validation segmentation labels
-            epochs: Number of training epochs
-            batch_size: Batch size for training
-            use_balanced_sampling: Whether to use balanced sampling for segmentation
-            positive_ratio: Ratio of positive sequences in each batch
-            
-        Returns:
-            Trained model
-        """
-        print(f"Starting training for {epochs} epochs...")
-        print(f"Batch size: {batch_size}")
-        print(f"Use balanced sampling: {use_balanced_sampling}")
-        if use_balanced_sampling:
-            print(f"Positive ratio: {positive_ratio:.1%}")
+        # Update model config with provided window_size
+        self.model_config['window_size'] = window_size
+        print(f"  Using window_size: {window_size}")
         
         # Create model
         model = self.create_model()
         
-        # Setup callbacks
+        # Create callbacks
         callbacks = [
             tf.keras.callbacks.EarlyStopping(
-                monitor='val_loss',
-                patience=15,
+                monitor='val_segmentation_output_loss', mode='min',
+                patience=patience,
                 restore_best_weights=True,
                 verbose=1
             ),
             tf.keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
+                monitor='val_segmentation_output_loss', mode='min',
                 factor=0.5,
-                patience=8,
+                patience=patience//2,
                 min_lr=1e-6,
                 verbose=1
             ),
             tf.keras.callbacks.ModelCheckpoint(
                 filepath=os.path.join(self.experiment_dir, 'best_model.keras'),
-                monitor='val_loss',
+                monitor='val_segmentation_output_loss', mode='min',
                 save_best_only=True,
-                save_weights_only=False,
                 verbose=1
             )
         ]
         
-        # Train the model
+        # Prepare data generators
         if use_balanced_sampling:
-            print(f"Using balanced sampling with {positive_ratio:.1%} positive ratio per batch")
-            
-            # Create balanced training generator
-            from .balanced_generator import BalancedSequenceGenerator
-            train_gen = BalancedSequenceGenerator(
+            print("Using balanced sampling for training...")
+            train_gen, val_gen = create_balanced_generators(
                 X_train, y_cls_train, y_seg_train,
                 batch_size=batch_size,
-                positive_ratio=positive_ratio,
-                shuffle=True
+                positive_ratio=positive_ratio
             )
             
-            # Use validation data directly (not balanced for more accurate validation)
-            val_data_dict = {'classification_output': y_cls_val, 'segmentation_output': y_seg_val}
-            
+            # Train with balanced generators
             history = model.fit(
                 train_gen,
-                validation_data=(X_val, val_data_dict),
+                validation_data=val_gen,
                 epochs=epochs,
                 callbacks=callbacks,
                 verbose=1
             )
         else:
-            print("Using standard training (no balanced sampling)")
+            # Train without balanced sampling
             history = model.fit(
-                X_train,
-                {'classification_output': y_cls_train, 'segmentation_output': y_seg_train},
+                X_train, {'classification_output': y_cls_train, 'segmentation_output': y_seg_train},
                 validation_data=(X_val, {'classification_output': y_cls_val, 'segmentation_output': y_seg_val}),
                 epochs=epochs,
                 batch_size=batch_size,
@@ -247,25 +245,23 @@ class MultitaskTrainer:
             )
         
         # Save training history
-        np.save(os.path.join(self.experiment_dir, 'training_history.npy'), history.history)
+        history_path = os.path.join(self.experiment_dir, 'training_history.npy')
+        np.save(history_path, history.history)
+        print(f"Training history saved to: {history_path}")
         
-        print(f"Training completed. Model saved to {self.experiment_dir}")
+        print("Training completed!")
         return model
     
-    def run_full_training(self, epochs: int = 100, batch_size: int = 32, 
-                         use_balanced_sampling: bool = True, positive_ratio: float = 0.3) -> tf.keras.Model:
+    def run_training(self, epochs: int = 250, batch_size: int = 32, 
+                    use_balanced_sampling: bool = True, positive_ratio: float = 0.2,
+                    patience: int = 20, window_size: int = 30) -> tf.keras.Model:
         """
         Run the complete training pipeline.
-        
-        Args:
-            epochs: Number of training epochs
-            batch_size: Batch size for training
-            use_balanced_sampling: Whether to use balanced sampling
-            positive_ratio: Ratio of positive sequences in each batch
-            
-        Returns:
-            Trained model
         """
+        print("="*60)
+        print("IMPROVED MULTITASK TRAINER - BETTER RECALL")
+        print("="*60)
+        
         # Load dataset
         X, y_classification, y_segmentation, metadata = self.load_dataset()
         
@@ -278,41 +274,35 @@ class MultitaskTrainer:
         model = self.train(
             X_train, y_cls_train, y_seg_train,
             X_val, y_cls_val, y_seg_val,
-            epochs=epochs, batch_size=batch_size,
+            epochs=epochs,
+            batch_size=batch_size,
             use_balanced_sampling=use_balanced_sampling,
-            positive_ratio=positive_ratio
+            positive_ratio=positive_ratio,
+            patience=patience,
+            window_size=window_size
         )
+        
+        print("="*60)
+        print("TRAINING COMPLETED SUCCESSFULLY!")
+        print("="*60)
+        print(f"Experiment directory: {self.experiment_dir}")
+        print("Model saved successfully!")
         
         return model
 
 
-def main():
-    """Main function for command-line usage."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Train multitask TCN model')
-    parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
-    parser.add_argument('--no_balanced_sampling', action='store_true', 
-                       help='Disable balanced sampling')
-    parser.add_argument('--positive_ratio', type=float, default=0.3,
-                       help='Ratio of positive sequences in each batch')
-    
-    args = parser.parse_args()
-    
+if __name__ == "__main__":
     # Create trainer
-    trainer = MultitaskTrainer()
-    
-    # Run training
-    model = trainer.run_full_training(
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        use_balanced_sampling=not args.no_balanced_sampling,
-        positive_ratio=args.positive_ratio
+    trainer = MultitaskTrainer(
+        experiment_name="main"
     )
     
-    print("Training completed successfully!")
-
-
-if __name__ == '__main__':
-    main()
+    # Run training
+    model = trainer.run_training(
+        epochs=250,
+        batch_size=32,
+        use_balanced_sampling=True,
+        positive_ratio=0.2,  # More negative samples for better recall
+        patience=20,
+        window_size=30
+    )

@@ -9,9 +9,9 @@ __version__ = "1.0.0"
 __author__ = "SmartMirror Team"
 
 from .src.core.realtime_pipeline import RealTimePipeline
-from .src.core.dataset_builder import ClassificationDatasetBuilder
+from .src.core.dataset_builder import MultitaskDatasetBuilder
 
 __all__ = [
     'RealTimePipeline',
-    'ClassificationDatasetBuilder',
+    'MultitaskDatasetBuilder',
 ] 

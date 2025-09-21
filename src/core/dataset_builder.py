@@ -8,6 +8,7 @@ segmentation and exercise type classification.
 
 import os
 import numpy as np
+from typing import Tuple, Dict, Any, List
 import cv2
 import mediapipe as mp
 import sys
@@ -18,79 +19,46 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 class LabelAugmenter:
     """
-    Augments binary labels by creating Gaussian distributions around rep-start markers.
+    Augments binary labels using Gaussian distribution around rep-start markers.
     
-    This creates more realistic probability distributions that help with class imbalance.
+    This creates more realistic temporal patterns for better model training.
     """
     
-    def __init__(self, fps: int = 30, margin_sec: float = 0.8, use_gaussian: bool = True):
+    def __init__(self, fps: int = 30, margin_frames: int = 3, sigma: float = 2.9961):
         """
         Initialize the label augmenter.
         
         Args:
             fps: Frames per second of the videos
-            margin_sec: Time margin in seconds to expand around labels
-            use_gaussian: If True, use Gaussian distribution; if False, use binary expansion
+            margin_frames: Number of frames to expand around labels (±7)
+            sigma: Standard deviation for Gaussian distribution
         """
-        self.margin = int(fps * margin_sec)
-        self.use_gaussian = use_gaussian
+        self.margin = margin_frames
+        self.sigma = sigma
 
     def augment(self, labels: np.ndarray) -> np.ndarray:
         """
-        Augment labels with either Gaussian distributions or binary expansion.
+        Apply Gaussian augmentation around positive samples.
         
         Args:
             labels: Binary array where 1 indicates repetition start
             
         Returns:
-            Augmented labels with expanded positive regions
+            Augmented labels with Gaussian-weighted positive regions
         """
-        if self.use_gaussian:
-            return self._gaussian_augment(labels)
-        else:
-            return self._binary_augment(labels)
-    
-    def _gaussian_augment(self, labels: np.ndarray) -> np.ndarray:
-        """
-        Create Gaussian distributions around rep peaks.
-        
-        Creates a more natural probability distribution:
-        - Peak value = 1.0 at rep start
-        - Gaussian falloff with sigma = margin/3 (99.7% within margin)
-        - Helps model learn gradual transitions instead of sharp binary changes
-        """
-        aug = np.zeros_like(labels, dtype=np.float32)
-        ones = np.where(labels == 1.0)[0]
-        
-        # Gaussian parameters
-        sigma = self.margin / 3.0  # 3-sigma rule: 99.7% of data within margin
-        
-        for peak_idx in ones:
-            # Create Gaussian around this peak
-            start = max(0, peak_idx - self.margin)
-            end = min(len(labels), peak_idx + self.margin + 1)
-            
-            for i in range(start, end):
-                # Gaussian formula: exp(-0.5 * ((x - mu) / sigma)^2)
-                distance = abs(i - peak_idx)
-                gaussian_value = np.exp(-0.5 * (distance / sigma) ** 2)
-                
-                # Take maximum if overlapping Gaussians
-                aug[i] = max(aug[i], gaussian_value)
-                
-        return aug
-    
-    def _binary_augment(self, labels: np.ndarray) -> np.ndarray:
-        """
-        Original binary expansion method (for backwards compatibility).
-        """
-        aug = labels.copy()
+        aug = labels.copy().astype(float)
         ones = np.where(labels == 1.0)[0]
         
         for idx in ones:
             start = max(0, idx - self.margin)
             end = min(len(labels), idx + self.margin + 1)
-            aug[start:end] = 1.0
+            
+            # Create Gaussian weights
+            x = np.arange(start, end) - idx
+            weights = np.exp(-(x**2) / (2 * self.sigma**2))
+            
+            # Apply Gaussian weights (keep maximum values)
+            aug[start:end] = np.maximum(aug[start:end], weights)
             
         return aug
 
@@ -227,7 +195,7 @@ class SegmentationDatasetBuilder:
         """
         self.videos_dir = videos_dir
         self.labels_dir = labels_dir
-        self.augmenter = LabelAugmenter(fps, margin_sec=0.3)  # Increased from 0.1s to 0.3s
+        self.augmenter = LabelAugmenter(fps, margin_frames=7, sigma=2.0)  # Increased from 0.1s to 0.3s
         self.extractor = FeatureExtractor()
         # # self.segmenter = VideoSegmenter(videos_dir=videos_dir, labels_dir=labels_dir)  # Not needed for multitask  # Not needed for multitask
 
@@ -456,3 +424,275 @@ def main():
 
 if __name__ == '__main__':
     exit(main())
+
+class MultitaskDatasetBuilder:
+    """
+    Multitask dataset builder that handles both exercise and no-exercise videos.
+    """
+    
+    def __init__(self, videos_dir: str = "data/raw", no_exercise_dir: str = "data/no_exercise", 
+                 labels_dir: str = "data/labels", fps: int = 30, window_size: int = 30, 
+                 margin_frames: int = 12, sigma: float = 3.40, no_exercise_ratio: float = 0.3):
+        """
+        Initialize the multitask dataset builder.
+        
+        Args:
+            videos_dir: Directory containing exercise videos
+            no_exercise_dir: Directory containing no-exercise videos
+            labels_dir: Directory containing manual labels (CSV files)
+            fps: Video frame rate (default: 30)
+            window_size: Number of frames per sequence (default: 30)
+            margin_frames: Number of frames to expand around labels (±12)
+            sigma: Standard deviation for Gaussian distribution
+            no_exercise_ratio: Ratio of no-exercise samples to include (0.0-1.0)
+        """
+        self.videos_dir = videos_dir
+        self.no_exercise_dir = no_exercise_dir
+        self.labels_dir = labels_dir
+        self.fps = fps
+        self.window_size = window_size
+        self.no_exercise_ratio = no_exercise_ratio
+        
+        # Initialize feature extractor and label augmenter
+        self.extractor = FeatureExtractor()
+        self.augmenter = LabelAugmenter(fps=fps, margin_frames=margin_frames, sigma=sigma)
+        
+        # Exercise types including no-exercise
+        self.exercise_types = ['push-ups', 'squats', 'pull-ups', 'dips', 'no_exercise']
+        self.no_exercise_idx = len(self.exercise_types) - 1  # Last index is no-exercise
+        
+        print(f"Multitask dataset builder initialized:")
+        print(f"  Window size: {window_size} frames ({window_size/fps:.1f} seconds)")
+        print(f"  FPS: {fps}")
+        print(f"  No-exercise ratio: {no_exercise_ratio}")
+        print(f"  Exercise types: {self.exercise_types}")
+    
+    def build_dataset(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
+        """
+        Build the multitask dataset with no-exercise support.
+        
+        Returns:
+            Tuple of (X, y_classification, y_segmentation, metadata)
+        """
+        print("Building multitask dataset...")
+        
+        all_sequences = []
+        all_cls_labels = []
+        all_seg_labels = []
+        video_metadata = []
+        
+        # Process exercise videos
+        print("\nProcessing exercise videos...")
+        exercise_videos = self._get_video_files(self.videos_dir)
+        
+        for video_path in exercise_videos:
+            print(f"Processing exercise video: {os.path.basename(video_path)}")
+            
+            # Determine exercise type from directory structure
+            exercise_type = self._get_exercise_type_from_path(video_path)
+            if exercise_type not in self.exercise_types[:-1]:  # Exclude no_exercise
+                print(f"  Skipping unknown exercise type: {exercise_type}")
+                continue
+            
+            exercise_idx = self.exercise_types.index(exercise_type)
+            
+            # Extract features
+            features = self._extract_video_features(video_path)
+            if not features:
+                print(f"  No features extracted, skipping")
+                continue
+            
+            # Load labels
+            label_path = os.path.join(self.labels_dir, exercise_type, f"{os.path.splitext(os.path.basename(video_path))[0]}.csv")
+            labels = self._load_labels_csv(label_path, max(features.keys()), is_no_exercise=False)
+            
+            # Skip videos with no positive labels (except no-exercise videos)
+            if not any(labels == 1.0) and exercise_type != 'no_exercise':
+                print(f'  No positive labels found, skipping video')
+                continue
+            
+            # Create sequences
+            sequences, cls_labels, seg_labels = self._create_windowed_sequences(
+                features, labels, exercise_idx, is_no_exercise=False
+            )
+            
+            all_sequences.extend(sequences)
+            all_cls_labels.extend(cls_labels)
+            all_seg_labels.extend(seg_labels)
+            
+            video_metadata.append({
+                'video_path': video_path,
+                'exercise_type': exercise_type,
+                'sequences_count': len(sequences),
+                'is_no_exercise': False
+            })
+            
+            print(f"  Created {len(sequences)} sequences")
+        
+        # Process no-exercise videos
+        print("\nProcessing no-exercise videos...")
+        no_exercise_videos = self._get_video_files(self.no_exercise_dir)
+        
+        # Limit no-exercise videos based on ratio
+        max_no_exercise = int(len(all_sequences) * self.no_exercise_ratio / (1 - self.no_exercise_ratio))
+        no_exercise_videos = no_exercise_videos[:max_no_exercise]
+        
+        for video_path in no_exercise_videos:
+            print(f"Processing no-exercise video: {os.path.basename(video_path)}")
+            
+            # Extract features
+            features = self._extract_video_features(video_path)
+            if not features:
+                print(f"  No features extracted, skipping")
+                continue
+            
+            # Create all-zero labels for no-exercise videos
+            labels = np.zeros(max(features.keys()) + 1)
+            
+            # Create sequences
+            sequences, cls_labels, seg_labels = self._create_windowed_sequences(
+                features, labels, self.no_exercise_idx, is_no_exercise=True
+            )
+            
+            all_sequences.extend(sequences)
+            all_cls_labels.extend(cls_labels)
+            all_seg_labels.extend(seg_labels)
+            
+            video_metadata.append({
+                'video_path': video_path,
+                'exercise_type': 'no_exercise',
+                'sequences_count': len(sequences),
+                'is_no_exercise': True
+            })
+            
+            print(f"  Created {len(sequences)} sequences")
+        
+        # Convert to numpy arrays
+        X = np.array(all_sequences)
+        y_classification = np.array(all_cls_labels)
+        y_segmentation = np.array(all_seg_labels)
+        
+        # Create metadata
+        metadata = {
+            'total_sequences': len(all_sequences),
+            'exercise_types': self.exercise_types,
+            'window_size': self.window_size,
+            'fps': self.fps,
+            'no_exercise_ratio': self.no_exercise_ratio,
+            'video_metadata': video_metadata,
+            'class_distribution': {
+                exercise_type: np.sum(y_classification == i) 
+                for i, exercise_type in enumerate(self.exercise_types)
+            }
+        }
+        
+        print(f"\nDataset built successfully!")
+        print(f"Total sequences: {len(all_sequences)}")
+        print(f"Class distribution: {metadata['class_distribution']}")
+        
+        return X, y_classification, y_segmentation, metadata
+    
+    def _extract_video_features(self, video_path: str) -> Dict[int, np.ndarray]:
+        """Extract features from ALL video frames for windowing."""
+        cap = cv2.VideoCapture(video_path)
+        features = {}
+        frame_count = 0
+        
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                feat = self.extractor.extract_angles(frame)
+                if feat is not None:
+                    features[frame_count] = feat
+                
+                frame_count += 1
+        finally:
+            cap.release()
+        
+        return features
+    
+    def _load_labels_csv(self, label_path: str, max_frame_idx: int, is_no_exercise: bool = False) -> np.ndarray:
+        """Load segmentation labels from CSV file."""
+        if is_no_exercise:
+            return np.zeros(max_frame_idx + 1)
+        
+        if os.path.exists(label_path):
+            try:
+                import pandas as pd
+                df = pd.read_csv(label_path)
+                labels = np.zeros(max_frame_idx + 1)
+                
+                if 'label' in df.columns and 'frame' in df.columns:
+                    frame_indices = df['frame'].values
+                    rep_labels = df['label'].values
+                    
+                    positive_count = 0
+                    for idx, label_val in zip(frame_indices, rep_labels):
+                        if label_val == 1.0 and 0 <= idx <= max_frame_idx:
+                            labels[idx] = 1.0
+                            positive_count += 1
+                    
+                    if positive_count > 0:
+                        print(f"    Found {positive_count} rep markers in CSV")
+                        return labels
+                        
+            except Exception as e:
+                print(f"  Error loading labels from {label_path}: {e}")
+        
+        print(f"  No valid labels found, using all zeros")
+        return np.zeros(max_frame_idx + 1)
+    
+    def _create_windowed_sequences(self, features: Dict[int, np.ndarray], labels: np.ndarray, 
+                                 exercise_idx: int, is_no_exercise: bool = False) -> Tuple[List[np.ndarray], List[int], List[np.ndarray]]:
+        """Create windowed sequences using sliding window."""
+        max_frame = max(features.keys()) if features else 0
+        sequences = []
+        cls_labels = []
+        seg_labels = []
+        
+        for start_frame in range(max_frame - self.window_size + 2):
+            frame_indices = list(range(start_frame, start_frame + self.window_size))
+            
+            if all(idx in features and idx < len(labels) for idx in frame_indices):
+                window_features = []
+                window_labels = []
+                
+                for frame_idx in frame_indices:
+                    window_features.append(features[frame_idx])
+                    window_labels.append(labels[frame_idx])
+                
+                sequences.append(np.array(window_features))
+                cls_labels.append(exercise_idx)
+                
+                if not is_no_exercise:
+                    augmented_labels = self.augmenter.augment(np.array(window_labels))
+                else:
+                    augmented_labels = np.array(window_labels)
+                
+                seg_labels.append(augmented_labels)
+        
+        return sequences, cls_labels, seg_labels
+    
+    def _get_video_files(self, directory: str) -> List[str]:
+        """Get all video files from directory."""
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv']
+        video_files = []
+        
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if any(file.lower().endswith(ext) for ext in video_extensions):
+                    video_files.append(os.path.join(root, file))
+        
+        return video_files
+    
+    def _get_exercise_type_from_path(self, video_path: str) -> str:
+        """Extract exercise type from video path."""
+        path_parts = video_path.split(os.sep)
+        for part in path_parts:
+            if part in self.exercise_types[:-1]:
+                return part
+        
+        return self.exercise_types[0]
